@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de seguimiento | Suministros</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        /* ── Reset & tokens ─────────────────────────────── */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --navy:   #1e3a5f;
+            --navy2:  #2d5a87;
+            --green:  #6bcb77;
+            --red:    #ff6b6b;
+            --yellow: #ffd93d;
+            --gray:   #64748b;
+            --light:  #f3f4f6;
+            --border: #e2e8f0;
+            --shadow: 0 2px 10px rgba(0,0,0,.1);
+            --radius: 12px;
+
+            /* Blue-gray palette for doughnut chart */
+            --p0:#1e3a5f; --p1:#2d5a87; --p2:#3d7aaf; --p3:#5a9fd4;
+            --p4:#7ab8e0; --p5:#9ecae1; --p6:#4a5568; --p7:#718096;
+            --p8:#a0aec0; --p9:#cbd5e0; --p10:#2c5282; --p11:#3182ce;
+            --p12:#63b3ed; --p13:#90cdf4; --p14:#4a6fa5; --p15:#6b8cae;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--light); color: var(--navy); line-height: 1.6; }
+
+        /* ── Utilities ───────────────────────────────────── */
+        .card { background: #fff; border-radius: var(--radius); padding: 1.5rem; box-shadow: var(--shadow); }
+        .flex { display: flex; align-items: center; }
+        .gap-sm { gap: .5rem; }
+        .gap-md { gap: 1rem; }
+        .gap-lg { gap: 1.5rem; }
+        .hidden { display: none !important; }
+        .visible { display: flex !important; }  /* for indicators/badges */
+
+        /* ── Buttons ─────────────────────────────────────── */
+        .btn {
+            display: inline-flex; align-items: center; gap: .5rem;
+            padding: .5rem 1rem; border-radius: 6px; border: none;
+            font-size: .85rem; cursor: pointer; transition: all .2s;
+        }
+        .btn-primary   { background: var(--navy);  color: #fff; }
+        .btn-primary:hover  { background: var(--navy2); }
+        .btn-ghost     { background: transparent; color: var(--gray); border: 1px solid var(--border); }
+        .btn-ghost:hover    { background: #f1f5f9; color: var(--navy); }
+        .btn-glass     { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.3); }
+        .btn-glass:hover    { background: rgba(255,255,255,.2); }
+        .btn-danger    { background: #e74c3c; color: #fff; }
+        .btn-danger:hover   { background: #c0392b; }
+
+        /* ── Header ──────────────────────────────────────── */
+        .header {
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy2) 100%);
+            color: #fff; padding: 1rem 2rem;
+            display: flex; justify-content: space-between; align-items: center;
+            flex-wrap: wrap; gap: 1rem;
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 600; }
+        .header-left { display: flex; align-items: center; gap: 1rem; }
+        .header-logo {
+            height: 40px; width: auto;
+            background: #fff; border-radius: 6px; padding: 4px 8px;
+            object-fit: contain;
+        }
+
+        /* ── Admin dropdown ──────────────────────────────── */
+        .admin-container { position: relative; }
+        .admin-dropdown {
+            position: absolute; top: calc(100% + .5rem); right: 0;
+            background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.15);
+            min-width: 200px; z-index: 1000; overflow: hidden;
+        }
+        .admin-dropdown-item {
+            padding: .75rem 1rem; cursor: pointer; color: var(--navy);
+            display: flex; align-items: center; gap: .5rem;
+            border-bottom: 1px solid #f0f0f0; transition: background .2s;
+        }
+        .admin-dropdown-item:last-child { border-bottom: none; }
+        .admin-dropdown-item:hover { background: var(--light); }
+        .admin-dropdown-item label { cursor: pointer; display: flex; align-items: center; gap: .5rem; width: 100%; }
+        input[type="file"] { display: none; }
+
+        /* ── Diagnostic panel ────────────────────────────── */
+        .diagnostic-panel { margin-bottom: 1.5rem; }
+        .diagnostic-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .diagnostic-header h3 { display: flex; align-items: center; gap: .5rem; }
+        .diagnostic-console {
+            background: #1a1a2e; color: #0f0; padding: 1rem; border-radius: 8px;
+            font-family: 'Consolas', monospace; font-size: .8rem;
+            max-height: 400px; overflow-y: auto;
+        }
+        .diagnostic-console p { margin: .25rem 0; padding: .25rem 0; border-bottom: 1px solid #333; }
+        .diagnostic-console .error   { color: var(--red); }
+        .diagnostic-console .warning { color: var(--yellow); }
+        .diagnostic-console .success { color: var(--green); }
+        .diagnostic-console .info    { color: #4d96ff; }
+        .diagnostic-console .header-line { color: #bf55ec; font-weight: bold; }
+
+        /* ── Status bar ──────────────────────────────────── */
+        .status-bar {
+            background: #fff; border-radius: 8px; padding: 1rem 1.5rem; margin-bottom: 1.5rem;
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: var(--shadow); flex-wrap: wrap; gap: 1rem;
+        }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--yellow); }
+        .status-dot.success { background: var(--green); }
+        .status-dot.error   { background: var(--red); }
+
+        /* ── Date filters ────────────────────────────────── */
+        .date-range-group {
+            display: flex; align-items: center; gap: .75rem;
+            background: #f8fafc; padding: .5rem 1rem;
+            border-radius: 8px; border: 1px solid var(--border);
+        }
+        .date-range-group label { font-size: .85rem; color: var(--gray); font-weight: 500; }
+        .date-range-group select, .chart-filter select {
+            padding: .4rem .8rem; border: 1px solid var(--border); border-radius: 6px;
+            font-size: .85rem; color: var(--navy); background: #fff; cursor: pointer;
+        }
+        .date-range-group select:focus, .chart-filter select:focus { outline: none; border-color: var(--navy); }
+        .chart-filter select { min-width: 200px; }
+        .range-separator { color: #94a3b8; font-weight: 500; }
+
+        .active-range-indicator, .filter-badge {
+            background: #e8f4fd; color: var(--navy); padding: .35rem .75rem;
+            border-radius: 20px; font-size: .8rem;
+            display: none; align-items: center; gap: .5rem;
+        }
+        .active-range-indicator { padding: .5rem 1rem; border-radius: 6px; }
+        .clear-badge {
+            cursor: pointer; font-weight: bold; width: 18px; height: 18px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%; background: rgba(30,58,95,.1); transition: all .2s;
+        }
+        .clear-badge:hover { background: var(--red); color: #fff; }
+
+        /* ── KPI grid ────────────────────────────────────── */
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
+        .kpi-card { position: relative; overflow: hidden; }
+        .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--navy); }
+        .kpi-card.positive::before { background: var(--green); }
+        .kpi-card.negative::before { background: var(--red); }
+        .kpi-card.warning::before  { background: var(--yellow); }
+        .kpi-label    { font-size: .85rem; color: var(--gray); margin-bottom: .5rem; text-transform: uppercase; letter-spacing: .5px; }
+        .kpi-value    { font-size: 1.75rem; font-weight: 700; color: var(--navy); margin-bottom: .25rem; }
+        .kpi-sublabel { font-size: .8rem; color: #94a3b8; }
+        .positive-value { color: var(--green); }
+        .negative-value { color: var(--red); }
+
+        /* ── Chart sections ──────────────────────────────── */
+        .container { max-width: 1600px; margin: 0 auto; padding: 1.5rem; }
+
+        .charts-section-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;
+            padding-bottom: 1rem; border-bottom: 1px solid var(--border);
+        }
+        .charts-section-title { display: flex; align-items: center; gap: .75rem; }
+        .charts-section-title h3 { color: var(--navy); font-size: 1.1rem; margin: 0; }
+        .chart-filter { display: flex; align-items: center; gap: .5rem; }
+        .chart-filter label { font-size: .85rem; color: var(--gray); font-weight: 500; }
+
+        .paired-charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+        .charts-grid        { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-bottom: 1.5rem; }
+        @media (max-width: 1200px) {
+            .paired-charts-grid, .charts-grid { grid-template-columns: 1fr; }
+        }
+
+        .paired-chart-card { background: #f8fafc; border-radius: 10px; padding: 1rem; }
+        .paired-chart-title { font-size: .9rem; color: var(--navy); font-weight: 600; margin-bottom: .75rem; display: flex; align-items: center; gap: .5rem; }
+
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: .75rem; }
+        .chart-header h3 { color: var(--navy); font-size: 1rem; display: flex; align-items: center; gap: .5rem; margin: 0; }
+
+        .chart-container       { position: relative; height: 420px; }
+        .paired-chart-container { position: relative; height: 280px; }
+        .full-width-chart-card { background: #f8fafc; border-radius: 10px; padding: 1rem; margin-top: 1.5rem; }
+        .full-width-chart-container { position: relative; height: 300px; }
+
+        /* ── Table ───────────────────────────────────────── */
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
+        .section-header h3 { color: var(--navy); font-size: 1rem; }
+        .search-box { display: flex; gap: .5rem; }
+        .search-box input { padding: .5rem 1rem; border: 1px solid var(--border); border-radius: 6px; width: 250px; }
+
+        .table-container { overflow-x: auto; max-height: 500px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+        thead { position: sticky; top: 0; z-index: 10; }
+        th { background: var(--navy); color: #fff; padding: .75rem; text-align: left; font-weight: 500; white-space: nowrap; }
+        td { padding: .75rem; border-bottom: 1px solid var(--border); }
+        tr:hover { background: #f8fafc; }
+        .number-cell { text-align: right; font-family: 'Consolas', monospace; }
+
+        /* ── Summary table (Cuadro trimestral) ──────────── */
+        .summary-table-wrap { overflow-x: auto; }
+        .summary-table {
+            width: 100%; border-collapse: collapse;
+            font-family: 'Segoe UI', sans-serif; font-size: .82rem; color: #333;
+        }
+        .summary-table th, .summary-table td {
+            border: 1px solid #d1d5db; padding: 7px 10px;
+        }
+        .summary-table th { text-align: center; }
+        .summary-table td { text-align: right; }
+        .summary-table td:first-child { text-align: left; font-weight: 500; }
+        .th-main  { background: #002060; color: #fff; text-transform: uppercase; }
+        .th-sub   { background: #b4c6e7; color: #000; font-weight: bold; }
+        .desv-pos { background: #c6efce; color: #006100; font-weight: bold; }
+        .desv-neg { background: #ffc7ce; color: #9c0006; font-weight: bold; }
+        .row-total td { background: #b4c6e7; font-weight: bold; }
+        .err-cell { color: #999; font-style: italic; }
+
+        /* ── Loading & empty state ───────────────────────── */
+        .loading-overlay {
+            position: fixed; inset: 0; background: rgba(30,58,95,.9);
+            display: none; justify-content: center; align-items: center;
+            z-index: 9999; flex-direction: column; gap: 1rem;
+        }
+        .loading-overlay.active { display: flex; }
+        .spinner { width: 60px; height: 60px; border: 4px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { color: #fff; font-size: 1.1rem; }
+
+        .empty-state { text-align: center; padding: 4rem 2rem; color: var(--gray); }
+        .empty-state h2 { color: var(--navy); margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div class="loading-text">Procesando archivo...</div>
+</div>
+
+<header class="header">
+    <div class="header-left">
+        <img src="data:image/jpeg;base64,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" alt="Farmatodo" class="header-logo">
+        <h1>Dashboard de seguimiento | Suministros</h1>
+    </div>
+    <div class="admin-container">
+        <button class="btn btn-glass" onclick="toggleAdmin()">⚙️ Administración ▼</button>
+        <div class="admin-dropdown hidden" id="adminDropdown">
+            <div class="admin-dropdown-item">
+                <label>📁 Cargar Archivo Excel<input type="file" id="fileInput" accept=".xlsx,.xls"></label>
+            </div>
+            <div class="admin-dropdown-item" onclick="togglePanel('diagnosticPanel'); closeAdmin()">🔧 Diagnóstico</div>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+
+    <!-- Diagnostic panel -->
+    <div class="card diagnostic-panel hidden" id="diagnosticPanel" style="margin-bottom:1.5rem">
+        <div class="diagnostic-header">
+            <h3>🔧 Consola de Diagnóstico</h3>
+            <button class="btn btn-danger" onclick="togglePanel('diagnosticPanel')">✕ Cerrar</button>
+        </div>
+        <div class="diagnostic-console" id="diagnosticConsole">
+            <p class="info">Esperando carga de archivo para diagnóstico...</p>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+        <div class="flex gap-sm">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Esperando archivo...</span>
+        </div>
+        <div class="flex gap-md hidden" id="filtersSection" style="flex-wrap:wrap">
+            <div class="date-range-group">
+                <label>🌎 País:</label>
+                <select id="paisFilter" onchange="applyPaisFilter()">
+                    <option value="">Todos</option>
+                    <option value="Venezuela">Venezuela</option>
+                    <option value="Colombia">Colombia</option>
+                    <option value="Argentina">Argentina</option>
+                </select>
+            </div>
+            <div class="date-range-group">
+                <label>📅 Desde:</label>
+                <select id="startMonthFilter"><option value="">Seleccionar</option></select>
+            </div>
+            <span class="range-separator">→</span>
+            <div class="date-range-group">
+                <label>Hasta:</label>
+                <select id="endMonthFilter"><option value="">Seleccionar</option></select>
+            </div>
+            <button class="btn btn-primary" onclick="applyDateRangeFilter()">🔍 Aplicar</button>
+            <button class="btn btn-ghost"   onclick="clearDateRangeFilter()">✕ Limpiar</button>
+            <div class="active-range-indicator hidden" id="activeRangeIndicator">
+                📆 <span id="activeRangeText"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="emptyState" class="empty-state">
+        <h2>Bienvenido al Dashboard Financiero</h2>
+        <p>Cargue un archivo Excel con las hojas "Presupuesto" y "Gasto Real" para comenzar el análisis.</p>
+        <p style="margin-top:1rem;font-size:.9rem">El archivo debe contener columnas de identificación (SUBCUENTA, CLASE, ITEM) y columnas mensuales (ej: ENERO-2024)</p>
+    </div>
+
+    <!-- Dashboard content -->
+    <div id="dashboardContent" class="hidden">
+
+        <div class="kpi-grid" id="kpiGrid"></div>
+
+        <!-- Filtered charts section -->
+        <div class="card" style="margin-bottom:1.5rem">
+            <div class="charts-section-header">
+                <div class="charts-section-title">
+                    <h3>📈 Análisis por Subcuenta</h3>
+                    <span class="filter-badge hidden" id="subcuentaFilterBadge">
+                        <span id="subcuentaFilterBadgeText"></span>
+                        <span class="clear-badge" onclick="clearSubcuentaFilter()">✕</span>
+                    </span>
+                </div>
+                <div class="chart-filter">
+                    <label>🔍 Filtrar por Subcuenta:</label>
+                    <select id="subcuentaFilter" onchange="updateFilteredCharts()">
+                        <option value="">Todas las subcuentas</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="paired-charts-grid">
+                <div class="paired-chart-card">
+                    <div class="paired-chart-title">📊 Comparativo Mensual: Presupuesto vs Gasto Real</div>
+                    <div class="paired-chart-container"><canvas id="monthlyChart"></canvas></div>
+                </div>
+                <div class="paired-chart-card">
+                    <div class="paired-chart-title">📉 Evolutivo Mensual: Tendencia del Gasto</div>
+                    <div class="paired-chart-container"><canvas id="evolutiveChart"></canvas></div>
+                </div>
+            </div>
+
+            <div class="full-width-chart-card hidden" id="unitCostChartContainer">
+                <div class="paired-chart-title">💰 Costo Unitario Promedio Mensual</div>
+                <div class="full-width-chart-container"><canvas id="unitCostChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Other charts -->
+        <div class="charts-grid">
+            <div class="card chart-card">
+                <div class="chart-header"><h3>🏆 Top 10 Cuentas por Gasto Real</h3></div>
+                <div class="chart-container"><canvas id="topAccountsChart"></canvas></div>
+            </div>
+            <div class="card chart-card">
+                <div class="chart-header"><h3>📊 Distribución de Gastos por Subcuenta</h3></div>
+                <div class="chart-container"><canvas id="distributionChart"></canvas></div>
+            </div>
+            <div class="card chart-card">
+                <div class="chart-header"><h3>📉 Bottom 10 Cuentas por Gasto Real</h3></div>
+                <div class="chart-container"><canvas id="bottom10Chart"></canvas></div>
+            </div>
+            <div class="card chart-card">
+                <div class="chart-header"><h3>🥧 Total Gasto de Suministros por Área</h3></div>
+                <div class="chart-container"><canvas id="graficoSuministros"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Trimester summary table -->
+        <div class="card" style="margin-bottom:1.5rem">
+            <div class="section-header">
+                <h3>📋 Resumen Trimestral por Subcuenta</h3>
+                <button class="btn btn-primary" onclick="exportToCSV()">📥 Exportar CSV</button>
+            </div>
+            <div class="summary-table-wrap">
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th class="th-main" rowspan="2">Subcuenta</th>
+                            <th class="th-main" colspan="3">Gasto Total</th>
+                            <th class="th-main" colspan="3">Unidades</th>
+                            <th class="th-main" colspan="3">Costo Unitario (Prom.)</th>
+                        </tr>
+                        <tr>
+                            <th class="th-sub">TRIM ACTUAL</th><th class="th-sub">TRIM AA.</th><th class="th-sub">DESV</th>
+                            <th class="th-sub">TRIM ACTUAL</th><th class="th-sub">TRIM AA.</th><th class="th-sub">DESV</th>
+                            <th class="th-sub">TRIM ACTUAL</th><th class="th-sub">TRIM AA.</th><th class="th-sub">DESV</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryBody"></tbody>
+                    <tfoot id="summaryFoot"></tfoot>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────────────────
+const state = {
+    raw: { presupuesto: [], gastoReal: [], costoUnitario: [], unidades: [] },
+    processed: [],
+    unitCost: [],
+    unidades: [],
+    monthly: {},
+    charts: {},
+    months: [],
+    subcuentas: [],
+    activePais: ''
+};
+
+const STORAGE_KEY = 'dashboard_suministros_data';
+
+// ── Constants ───────────────────────────────────────────────────────────────
+const MONTH_ORDER = { ENERO:1,FEBRERO:2,MARZO:3,ABRIL:4,MAYO:5,JUNIO:6,JULIO:7,AGOSTO:8,SEPTIEMBRE:9,OCTUBRE:10,NOVIEMBRE:11,DICIEMBRE:12 };
+const MONTH_RE    = /^(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)[-_\s]?(\d{4})$/i;
+const PALETTE     = ['#1e3a5f','#2d5a87','#3d7aaf','#5a9fd4','#7ab8e0','#9ecae1','#4a5568','#718096','#a0aec0','#cbd5e0','#2c5282','#3182ce','#63b3ed','#90cdf4','#4a6fa5','#6b8cae'];
+
+// ── Shared chart defaults ───────────────────────────────────────────────────
+const moneyTick   = v => '$' + fmt(v);
+const moneyTooltip = ctx => `${ctx.dataset.label}: $${fmt(ctx.raw)}`;
+const baseScales  = (rotateX = true) => ({
+    y: { beginAtZero: true, ticks: { callback: moneyTick }, grid: { color: 'rgba(0,0,0,.05)' } },
+    x: { ticks: rotateX ? { maxRotation: 45, minRotation: 45 } : {}, grid: { display: false } }
+});
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+const fmt         = n => Math.round(n).toLocaleString('es-CL');
+const fmtDec      = n => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const getField    = (row, ...keys) => { for (const k of keys) { if (row[k] != null) return String(row[k]).trim(); } return ''; };
+const sumMonths   = (row, type, months) => months.reduce((s, m) => s + (row[type][m] || 0), 0);
+const monthLabel  = m => { const x = m.match(/(\w+)[-_\s]?(\d{4})/i); return x ? `${x[1].substring(0,3)} ${x[2].substring(2)}` : m; };
+const monthDisplay = m => { const x = m.match(/(\w+)[-_\s]?(\d{4})/i); return x ? `${cap(x[1])} ${x[2]}` : m; };
+const cap         = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+
+function destroyCharts(...keys) {
+    keys.forEach(k => { if (state.charts[k]) { state.charts[k].destroy(); delete state.charts[k]; } });
+}
+
+// ── UI helpers ──────────────────────────────────────────────────────────────
+function togglePanel(id) { document.getElementById(id).classList.toggle('hidden'); }
+function toggleAdmin()   { document.getElementById('adminDropdown').classList.toggle('hidden'); }
+function closeAdmin()    { document.getElementById('adminDropdown').classList.add('hidden'); }
+
+document.addEventListener('click', e => {
+    if (!document.querySelector('.admin-container').contains(e.target)) closeAdmin();
+});
+
+function log(msg, type = 'info') {
+    const con = document.getElementById('diagnosticConsole');
+    const p   = document.createElement('p');
+    p.className = type;
+    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    con.appendChild(p);
+    con.scrollTop = con.scrollHeight;
+}
+
+function setStatus(text, type) {
+    document.getElementById('statusText').textContent = text;
+    document.getElementById('statusDot').className = `status-dot${type ? ' ' + type : ''}`;
+}
+
+function showLoading(show) { document.getElementById('loadingOverlay').classList.toggle('active', show); }
+
+function saveToStorage() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.raw));
+    } catch(e) { log('No se pudo guardar en localStorage: ' + e.message, 'warning'); }
+}
+
+function loadFromStorage() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (!saved) return false;
+        const parsed = JSON.parse(saved);
+        if (!parsed.presupuesto?.length && !parsed.gastoReal?.length) return false;
+        state.raw.presupuesto   = parsed.presupuesto   || [];
+        state.raw.gastoReal     = parsed.gastoReal     || [];
+        state.raw.costoUnitario = parsed.costoUnitario || [];
+        state.raw.unidades      = parsed.unidades      || [];
+        return true;
+    } catch(e) { return false; }
+}
+
+// ── Auto-load saved data on startup ─────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+    if (loadFromStorage()) {
+        showLoading(true);
+        setStatus('Cargando datos guardados...', 'warning');
+        setTimeout(() => {
+            try {
+                analyzeValues();
+                logBudgetTotal();
+                processData();
+                setStatus('Datos cargados desde sesión anterior', 'success');
+            } catch(e) {
+                setStatus('Error al restaurar datos', 'error');
+                log('Error al restaurar: ' + e.message, 'error');
+            }
+            showLoading(false);
+        }, 100);
+    }
+});
+
+// ── File upload ─────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    closeAdmin();
+    document.getElementById('diagnosticConsole').innerHTML = '';
+    log(`Archivo: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
+    showLoading(true);
+    setStatus('Procesando...', 'warning');
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+        try {
+            const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+            log(`Hojas: ${wb.SheetNames.join(', ')}`, 'header-line');
+
+            const find = (...terms) => wb.SheetNames.find(n => terms.every(t => n.toLowerCase().includes(t)));
+            const presSheet  = find('presupuesto');
+            const realSheet  = find('gasto') || find('real');
+            const ucSheet    = find('costo', 'unitario');
+            const unidSheet  = wb.SheetNames.find(n => n.toLowerCase().includes('unidad') || n.toLowerCase() === 'unidades');
+
+            if (!presSheet || !realSheet) throw new Error('No se encontraron las hojas requeridas (Presupuesto y Gasto Real)');
+
+            [['presupuesto', presSheet], ['gastoReal', realSheet], ['costoUnitario', ucSheet], ['unidades', unidSheet]].forEach(([key, sh]) => {
+                state.raw[key] = sh ? XLSX.utils.sheet_to_json(wb.Sheets[sh]) : [];
+                log(`${sh || key + ': No encontrada (opcional)'}: ${state.raw[key].length} filas`, sh ? 'success' : 'warning');
+            });
+
+            analyzeValues();
+            logBudgetTotal();
+            processData();
+            saveToStorage();
+            showLoading(false);
+            setStatus('Archivo cargado y guardado correctamente', 'success');
+        } catch (err) {
+            log(`Error: ${err.message}`, 'error');
+            showLoading(false);
+            setStatus('Error al procesar archivo', 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+});
+
+// ── Data processing ─────────────────────────────────────────────────────────
+function analyzeValues() {
+    log('=== ANÁLISIS DE VALORES ÚNICOS ===', 'header-line');
+    ['presupuesto', 'gastoReal', 'costoUnitario'].forEach(key => {
+        if (!state.raw[key].length) return;
+        log(`--- ${key.toUpperCase()} ---`, 'warning');
+        ['SUBCUENTA','CLASE','ITEM','NOMBRE','DESCRIPCION'].forEach(col => {
+            const vals = new Set(state.raw[key].map(r => r[col]).filter(v => v != null));
+            if (vals.size) log(`  ${col}: ${vals.size} valores únicos`);
+        });
+    });
+}
+
+function logBudgetTotal() {
+    log('=== SUMA DIRECTA DEL PRESUPUESTO ===', 'header-line');
+    if (!state.raw.presupuesto.length) return;
+    const cols = Object.keys(state.raw.presupuesto[0]).filter(c => MONTH_RE.test(c.trim()));
+    log(`Columnas de meses: ${cols.length}`);
+    const total = cols.reduce((s, col) => s + state.raw.presupuesto.reduce((ss, r) => ss + (parseFloat(r[col]) || 0), 0), 0);
+    log(`TOTAL PRESUPUESTO: $${total.toLocaleString('es-CL')}`, 'success');
+}
+
+function generateKeys(row) {
+    const sc = getField(row, 'SUBCUENTA', 'Subcuenta');
+    const cl = getField(row, 'CLASE',     'Clase');
+    const it = getField(row, 'ITEM',      'Item');
+    const keys = [];
+    if (sc && cl && it) keys.push(`${sc}|${cl}|${it}`);
+    if (sc && cl)       keys.push(`${sc}|${cl}`);
+    if (cl && it)       keys.push(`${cl}|${it}`);
+    if (sc) keys.push(sc);
+    if (cl) keys.push(cl);
+    if (it) keys.push(it);
+    return keys;
+}
+
+function processData() {
+    log('=== PROCESANDO DATOS ===', 'header-line');
+
+    // Collect & sort available months
+    const allCols = new Set([...state.raw.presupuesto, ...state.raw.gastoReal].flatMap(r => Object.keys(r)));
+    const rawMonths = [...allCols].filter(c => MONTH_RE.test(c.trim()));
+    state.months = rawMonths.sort((a, b) => {
+        const [, ma, ya] = a.match(/(\w+)[-_\s]?(\d{4})/i) || [];
+        const [, mb, yb] = b.match(/(\w+)[-_\s]?(\d{4})/i) || [];
+        return (parseInt(ya) - parseInt(yb)) || (MONTH_ORDER[ma?.toUpperCase()] - MONTH_ORDER[mb?.toUpperCase()]);
+    });
+    log(`Meses detectados: ${state.months.length}`);
+
+    // Budget lookup map
+    const budgetMap = new Map();
+    state.raw.presupuesto.filter(row => {
+        if (!state.activePais) return true;
+        const pais = getField(row, 'PAIS', 'Pais', 'País');
+        return !pais || pais.toUpperCase() === state.activePais.toUpperCase();
+    }).forEach(row => {
+        generateKeys(row).filter(k => k?.trim()).forEach(k => { if (!budgetMap.has(k)) budgetMap.set(k, row); });
+    });
+
+    const subcuentasSet = new Set();
+
+    // Process real spend rows
+    state.processed = state.raw.gastoReal.filter(gastoRow => {
+        if (!state.activePais) return true;
+        const pais = getField(gastoRow, 'PAIS', 'Pais', 'País');
+        return pais.toUpperCase() === state.activePais.toUpperCase();
+    }).map(gastoRow => {
+        const budgetRow = generateKeys(gastoRow).reduce((found, k) => found || budgetMap.get(k), null);
+        const sc = getField(gastoRow, 'SUBCUENTA', 'Subcuenta');
+        if (sc) subcuentasSet.add(sc);
+
+        const row = {
+            subcuenta: sc,
+            clase:  getField(gastoRow, 'CLASE',   'Clase'),
+            item:   getField(gastoRow, 'ITEM',    'Item'),
+            nombre: getField(gastoRow, 'NOMBRE',  'Nombre', 'DESCRIPCION', 'Descripcion'),
+            monthlyBudget: {}, monthlyReal: {},
+            totalBudget: 0,    totalReal: 0
+        };
+
+        state.months.forEach(m => {
+            row.monthlyBudget[m] = budgetRow ? (parseFloat(budgetRow[m]) || 0) : 0;
+            row.monthlyReal[m]   = parseFloat(gastoRow[m]) || 0;
+            row.totalBudget     += row.monthlyBudget[m];
+            row.totalReal       += row.monthlyReal[m];
+        });
+        return row;
+    });
+
+    // Process unit cost rows
+    state.unitCost = state.raw.costoUnitario.filter(row => {
+        if (!state.activePais) return true;
+        const pais = getField(row, 'PAIS', 'Pais', 'País');
+        return !pais || pais.toUpperCase() === state.activePais.toUpperCase();
+    }).map(row => {
+        const sc = getField(row, 'SUBCUENTA', 'Subcuenta');
+        if (sc) subcuentasSet.add(sc);
+        const r = {
+            subcuenta: sc,
+            clase:  getField(row, 'CLASE',  'Clase'),
+            item:   getField(row, 'ITEM',   'Item'),
+            nombre: getField(row, 'NOMBRE', 'Nombre', 'DESCRIPCION', 'Descripcion'),
+            monthlyUnitCost: {}
+        };
+        state.months.forEach(m => { r.monthlyUnitCost[m] = parseFloat(row[m]) || 0; });
+        return r;
+    });
+    if (state.unitCost.length) log(`Costo Unitario: ${state.unitCost.length} registros`, 'success');
+
+    // Process unidades rows
+    state.unidades = state.raw.unidades.filter(row => {
+        if (!state.activePais) return true;
+        const pais = getField(row, 'PAIS', 'Pais', 'País');
+        return !pais || pais.toUpperCase() === state.activePais.toUpperCase();
+    }).map(row => {
+        const sc = getField(row, 'SUBCUENTA', 'Subcuenta');
+        if (sc) subcuentasSet.add(sc);
+        const r = {
+            subcuenta: sc,
+            clase:  getField(row, 'CLASE',  'Clase'),
+            item:   getField(row, 'ITEM',   'Item'),
+            nombre: getField(row, 'NOMBRE', 'Nombre', 'DESCRIPCION', 'Descripcion'),
+            monthlyUnits: {}
+        };
+        state.months.forEach(m => { r.monthlyUnits[m] = parseFloat(row[m]) || 0; });
+        return r;
+    });
+    if (state.unidades.length) log(`Unidades: ${state.unidades.length} registros`, 'success');
+
+    state.subcuentas = [...subcuentasSet].sort();
+    log(`Subcuentas: ${state.subcuentas.length}`);
+
+    // Calculate monthly totals
+    state.monthly = {};
+    state.months.forEach(m => {
+        state.monthly[m] = { budget: 0, real: 0 };
+        state.processed.forEach(r => {
+            state.monthly[m].budget += r.monthlyBudget[m] || 0;
+            state.monthly[m].real   += r.monthlyReal[m]   || 0;
+        });
+    });
+
+    populateDateFilters();
+    populateSubcuentaFilter();
+    updateDashboard();
+
+    document.getElementById('emptyState').classList.add('hidden');
+    document.getElementById('dashboardContent').classList.remove('hidden');
+}
+
+// ── Filters ─────────────────────────────────────────────────────────────────
+function populateDateFilters() {
+    const start = document.getElementById('startMonthFilter');
+    const end   = document.getElementById('endMonthFilter');
+    const opts  = state.months.map(m => `<option value="${m}">${monthDisplay(m)}</option>`).join('');
+    start.innerHTML = '<option value="">Seleccionar inicio</option>' + opts;
+    end.innerHTML   = '<option value="">Seleccionar fin</option>'   + opts;
+    if (state.months.length) {
+        start.value = state.months[0];
+        end.value   = state.months[state.months.length - 1];
+    }
+    document.getElementById('filtersSection').classList.remove('hidden');
+    document.getElementById('filtersSection').style.display = 'flex';
+}
+
+function populateSubcuentaFilter() {
+    const sel = document.getElementById('subcuentaFilter');
+    sel.innerHTML = '<option value="">Todas las subcuentas</option>' +
+        state.subcuentas.map(s => `<option value="${s}">${s}</option>`).join('');
+}
+
+function getFilteredMonths() {
+    const s = document.getElementById('startMonthFilter').value;
+    const e = document.getElementById('endMonthFilter').value;
+    const si = state.months.indexOf(s), ei = state.months.indexOf(e);
+    return (si !== -1 && ei !== -1 && si <= ei) ? state.months.slice(si, ei + 1) : state.months;
+}
+
+function applyDateRangeFilter() {
+    const s = document.getElementById('startMonthFilter').value;
+    const e = document.getElementById('endMonthFilter').value;
+    if (!s || !e) { alert('Por favor seleccione tanto el mes de inicio como el mes de fin.'); return; }
+    if (state.months.indexOf(s) > state.months.indexOf(e)) { alert('El mes de inicio debe ser anterior o igual al mes de fin.'); return; }
+
+    document.getElementById('activeRangeText').textContent = `${monthDisplay(s)} → ${monthDisplay(e)}`;
+    document.getElementById('activeRangeIndicator').classList.remove('hidden');
+    document.getElementById('activeRangeIndicator').style.display = 'flex';
+    updateDashboard();
+}
+
+function clearDateRangeFilter() {
+    if (state.months.length) {
+        document.getElementById('startMonthFilter').value = state.months[0];
+        document.getElementById('endMonthFilter').value   = state.months[state.months.length - 1];
+    }
+    document.getElementById('activeRangeIndicator').classList.add('hidden');
+    updateDashboard();
+}
+
+function clearSubcuentaFilter() {
+    document.getElementById('subcuentaFilter').value = '';
+    document.getElementById('subcuentaFilterBadge').classList.add('hidden');
+    updateFilteredCharts();
+}
+
+function applyPaisFilter() {
+    state.activePais = document.getElementById('paisFilter').value;
+    processData();
+}
+
+// ── Dashboard update ─────────────────────────────────────────────────────────
+function updateDashboard() {
+    const months = getFilteredMonths();
+
+    let totalBudget = 0, totalReal = 0;
+    state.processed.forEach(row => {
+        totalBudget += sumMonths(row, 'monthlyBudget', months);
+        totalReal   += sumMonths(row, 'monthlyReal',   months);
+    });
+
+    const variance = totalBudget - totalReal;
+    const execRate = totalBudget > 0 ? (totalReal / totalBudget * 100) : 0;
+
+    renderKPIs(totalBudget, totalReal, variance, execRate);
+    renderCharts(months);
+    renderSummaryTable(months);
+}
+
+// ── KPIs ────────────────────────────────────────────────────────────────────
+function kpiCard(label, value, sub, cls = '') {
+    return `<div class="card kpi-card ${cls}">
+        <div class="kpi-label">${label}</div>
+        <div class="kpi-value">${value}</div>
+        <div class="kpi-sublabel">${sub}</div>
+    </div>`;
+}
+
+function renderKPIs(budget, real, variance, rate) {
+    document.getElementById('kpiGrid').innerHTML =
+        kpiCard('Presupuesto Total',   `$${fmt(budget)}`,  'Monto asignado') +
+        kpiCard('Gasto Real Total',    `$${fmt(real)}`,    'Monto ejecutado', real > budget ? 'negative' : 'positive') +
+        kpiCard('Variación', `<span class="${variance < 0 ? 'negative-value' : 'positive-value'}">$${fmt(variance)}</span>`,
+            variance >= 0 ? 'Bajo presupuesto' : 'Sobre presupuesto', variance < 0 ? 'negative' : 'positive') +
+        kpiCard('% Ejecución', `${rate.toFixed(1)}%`, 'Del presupuesto total',
+            rate > 100 ? 'negative' : rate > 90 ? 'warning' : 'positive');
+}
+
+// ── Charts ───────────────────────────────────────────────────────────────────
+function makeChart(id, type, data, options) {
+    return new Chart(document.getElementById(id), { type, data, options: { responsive: true, maintainAspectRatio: false, ...options } });
+}
+
+function renderCharts(months) {
+    updateFilteredCharts();
+
+    destroyCharts('topAccounts', 'distribution', 'bottom10', 'suministros');
+
+    // Top 10 accounts
+    const top10 = [...state.processed]
+        .map(r => ({ name: r.nombre || `${r.clase}-${r.item}`, total: sumMonths(r, 'monthlyReal', months) }))
+        .sort((a, b) => b.total - a.total).slice(0, 10);
+
+    state.charts.topAccounts = makeChart('topAccountsChart', 'bar', {
+        labels: top10.map(a => a.name),
+        datasets: [{ label: 'Gasto Real', data: top10.map(a => a.total), backgroundColor: 'rgba(30,58,95,.7)', borderColor: '#1e3a5f', borderWidth: 1 }]
+    }, {
+        indexAxis: 'y',
+        layout: { padding: { left: 10 } },
+        scales: {
+            x: { beginAtZero: true, ticks: { callback: moneyTick } },
+            y: { ticks: { font: { size: 11 }, crossAlign: 'far', autoSkip: false } }
+        },
+        plugins: { tooltip: { callbacks: { label: ctx => '$' + fmt(ctx.raw) } } }
+    });
+
+    // Distribution doughnut
+    const bySubcuenta = {};
+    state.processed.forEach(r => {
+        const k = r.subcuenta || 'Sin subcuenta';
+        bySubcuenta[k] = (bySubcuenta[k] || 0) + sumMonths(r, 'monthlyReal', months);
+    });
+    const sorted = Object.entries(bySubcuenta).filter(([,v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
+
+    state.charts.distribution = makeChart('distributionChart', 'doughnut', {
+        labels: sorted.map(s => s[0]),
+        datasets: [{ data: sorted.map(s => s[1]), backgroundColor: sorted.map((_, i) => PALETTE[i % PALETTE.length]), borderWidth: 2, borderColor: '#fff' }]
+    }, {
+        plugins: {
+            legend: { position: 'right', labels: { boxWidth: 12, padding: 8, font: { size: 11 } } },
+            tooltip: { callbacks: { label: ctx => {
+                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                return `${ctx.label}: $${fmt(ctx.raw)} (${((ctx.raw / total) * 100).toFixed(1)}%)`;
+            }}}
+        }
+    });
+
+    // Suministros por Área pie chart
+    renderSuministrosChart(months);
+
+    // Bottom 10 accounts (green palette)
+    const bottom10 = [...state.processed]
+        .map(r => ({ name: r.nombre || `${r.clase}-${r.item}`, total: sumMonths(r, 'monthlyReal', months) }))
+        .filter(a => a.total > 0)
+        .sort((a, b) => a.total - b.total).slice(0, 10);
+
+    state.charts.bottom10 = makeChart('bottom10Chart', 'bar', {
+        labels: bottom10.map(a => a.name),
+        datasets: [{ label: 'Gasto Real', data: bottom10.map(a => a.total),
+            backgroundColor: 'rgba(107,203,119,.7)', borderColor: '#4caf50', borderWidth: 1 }]
+    }, {
+        indexAxis: 'y',
+        layout: { padding: { left: 10 } },
+        scales: {
+            x: { beginAtZero: true, ticks: { callback: moneyTick } },
+            y: { ticks: { font: { size: 11 }, crossAlign: 'far', autoSkip: false } }
+        },
+        plugins: { tooltip: { callbacks: { label: ctx => '$' + fmt(ctx.raw) } } }
+    });
+}
+
+// ── Suministros por Área pie chart ──────────────────────────────────────────
+function renderSuministrosChart(months) {
+    // Identify the last month in the filtered range to compute the trimester
+    const endMonth = months[months.length - 1];
+    const trimCurr = endMonth ? getTrimMonths(endMonth, 0) : months;
+
+    // Helper: sum TRIM ACTUAL (trimCurr) for a given subcuenta name (case-insensitive partial match)
+    function trimSum(subcuentaName) {
+        const lc = subcuentaName.toLowerCase();
+        return state.processed
+            .filter(r => r.subcuenta && r.subcuenta.toLowerCase().includes(lc))
+            .reduce((s, r) => s + sumMonths(r, 'monthlyReal', trimCurr), 0);
+    }
+
+    const recursosHumanos = trimSum('UNIFORMES ROLL-OUT');
+    const comercial       = trimSum('ENCARTES');
+    const comunes         = trimSum('OTROS MATERIALES Y SUMINISTROS');
+
+    // Total Trim Actual (all subcuentas)
+    const totalTrim = state.processed.reduce((s, r) => s + sumMonths(r, 'monthlyReal', trimCurr), 0);
+
+    // Operaciones = Total - (RRHH + Comercial + Comunes)
+    const operaciones = totalTrim - recursosHumanos - comercial - comunes;
+
+    const pieData = [
+        { label: 'Operaciones',       value: Math.max(0, operaciones), color: '#4e79a7' },
+        { label: 'Comercial',         value: Math.max(0, comercial),   color: '#816395' },
+        { label: 'Recursos Humanos',  value: Math.max(0, recursosHumanos), color: '#9ab55e' },
+        { label: 'Comunes',           value: Math.max(0, comunes),     color: '#5da5da' },
+    ].filter(d => d.value > 0);
+
+    state.charts.suministros = makeChart('graficoSuministros', 'pie', {
+        labels: pieData.map(d => d.label),
+        datasets: [{
+            data: pieData.map(d => d.value),
+            backgroundColor: pieData.map(d => d.color),
+            borderWidth: 2,
+            borderColor: '#ffffff'
+        }]
+    }, {
+        plugins: {
+            legend: {
+                position: 'right',
+                labels: { boxWidth: 12, padding: 20, font: { size: 11 } }
+            },
+            tooltip: {
+                callbacks: {
+                    label: ctx => {
+                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                        return `${ctx.label}: $${fmt(ctx.raw)} (${((ctx.raw / total) * 100).toFixed(1)}%)`;
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateFilteredCharts() {
+    const months = getFilteredMonths();
+    const selSC  = document.getElementById('subcuentaFilter').value;
+
+    // Badge
+    const badge = document.getElementById('subcuentaFilterBadge');
+    if (selSC) {
+        document.getElementById('subcuentaFilterBadgeText').textContent = selSC;
+        badge.classList.remove('hidden'); badge.style.display = 'inline-flex';
+    } else {
+        badge.classList.add('hidden');
+    }
+
+    // Aggregate monthly data
+    const agg = {};
+    months.forEach(m => { agg[m] = { budget: 0, real: 0 }; });
+    state.processed.forEach(r => {
+        if (selSC && r.subcuenta !== selSC) return;
+        months.forEach(m => { agg[m].budget += r.monthlyBudget[m] || 0; agg[m].real += r.monthlyReal[m] || 0; });
+    });
+
+    const labels  = months.map(monthLabel);
+    const budgets = months.map(m => agg[m].budget);
+    const reals   = months.map(m => agg[m].real);
+
+    // Bar chart
+    destroyCharts('monthly');
+    state.charts.monthly = makeChart('monthlyChart', 'bar', {
+        labels,
+        datasets: [
+            { label: 'Presupuesto', data: budgets, backgroundColor: 'rgba(30,58,95,.7)',   borderColor: '#1e3a5f', borderWidth: 1 },
+            { label: 'Gasto Real',  data: reals,   backgroundColor: 'rgba(107,203,119,.7)', borderColor: '#6bcb77', borderWidth: 1 }
+        ]
+    }, {
+        scales: baseScales(),
+        plugins: { legend: { display: true, position: 'top' }, tooltip: { callbacks: { label: moneyTooltip } } }
+    });
+
+    // Cumulative line chart
+    destroyCharts('evolutive');
+    let cumB = 0, cumR = 0;
+    const cumBudgets = budgets.map(v => (cumB += v));
+    const cumReals   = reals.map(v   => (cumR += v));
+
+    const lineDataset = (label, data, color, fillColor) => ({
+        label, data, borderColor: color, backgroundColor: fillColor,
+        borderWidth: 2, fill: true, tension: 0.3,
+        pointBackgroundColor: color, pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6
+    });
+
+    state.charts.evolutive = makeChart('evolutiveChart', 'line', {
+        labels,
+        datasets: [
+            lineDataset('Presupuesto Acumulado', cumBudgets, '#1e3a5f', 'rgba(30,58,95,0.08)'),
+            lineDataset('Gasto Real Acumulado',  cumReals,   '#6bcb77', 'rgba(107,203,119,0.08)')
+        ]
+    }, {
+        interaction: { mode: 'index', intersect: false },
+        scales: baseScales(),
+        plugins: {
+            legend: { display: true, position: 'top' },
+            tooltip: { callbacks: {
+                label: moneyTooltip,
+                afterBody: items => {
+                    const i = items[0].dataIndex;
+                    const diff = cumBudgets[i] - cumReals[i];
+                    const pct  = cumBudgets[i] > 0 ? ((cumReals[i] / cumBudgets[i]) * 100).toFixed(1) : 0;
+                    return ['', `Diferencia: $${fmt(diff)}`, `Ejecución: ${pct}%`];
+                }
+            }}
+        }
+    });
+
+    // Unit cost chart
+    const ucContainer = document.getElementById('unitCostChartContainer');
+    if (!state.unitCost.length) { ucContainer.classList.add('hidden'); return; }
+    ucContainer.classList.remove('hidden');
+
+    destroyCharts('unitCost');
+    const ucValues = months.map(m => {
+        let sum = 0, count = 0;
+        state.unitCost.forEach(r => {
+            if (selSC && r.subcuenta !== selSC) return;
+            const v = r.monthlyUnitCost[m] || 0;
+            if (v > 0) { sum += v; count++; }
+        });
+        return count > 0 ? sum / count : 0;
+    });
+
+    state.charts.unitCost = makeChart('unitCostChart', 'line', {
+        labels,
+        datasets: [{
+            label: 'Costo Unitario Promedio', data: ucValues,
+            borderColor: '#ffd93d', backgroundColor: 'rgba(255,217,61,.1)',
+            borderWidth: 3, fill: true, tension: 0.3,
+            pointBackgroundColor: '#ffd93d', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7
+        }]
+    }, {
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            y: { beginAtZero: true, ticks: { callback: v => '$' + fmtDec(v) }, grid: { color: 'rgba(0,0,0,.05)' } },
+            x: { ticks: { maxRotation: 45, minRotation: 45 }, grid: { display: false } }
+        },
+        plugins: {
+            legend: { display: true, position: 'top' },
+            tooltip: { callbacks: { label: ctx => `Costo Unitario Promedio: $${fmtDec(ctx.raw)}` } }
+        }
+    });
+}
+
+// ── Trimester helpers ────────────────────────────────────────────────────────
+// Returns the 3 months ending at endMonth (inclusive), for a given year offset.
+// yearOffset=0 → current year, yearOffset=-1 → same quarter previous year.
+function getTrimMonths(endMonth, yearOffset) {
+    // endMonth is a key like "DICIEMBRE-2024"
+    const match = endMonth.match(/(\w+)[-_\s]?(\d{4})/i);
+    if (!match) return [];
+    const endMonthName = match[1].toUpperCase();
+    const endYear      = parseInt(match[2]) + yearOffset;
+    const endIdx       = MONTH_ORDER[endMonthName]; // 1-12
+
+    // Build list of 3 consecutive month keys ending at endIdx
+    const result = [];
+    for (let i = 2; i >= 0; i--) {
+        let mIdx = endIdx - i;
+        let yr   = endYear;
+        if (mIdx <= 0) { mIdx += 12; yr--; }
+        const mName = Object.keys(MONTH_ORDER).find(k => MONTH_ORDER[k] === mIdx);
+        if (!mName) continue;
+        // Find actual key in state.months
+        const key = state.months.find(m => {
+            const x = m.match(/(\w+)[-_\s]?(\d{4})/i);
+            return x && x[1].toUpperCase() === mName && parseInt(x[2]) === yr;
+        });
+        if (key) result.push(key);
+    }
+    return result;
+}
+
+function desvCell(curr, prev) {
+    if (prev === 0 && curr === 0) return `<td class="err-cell">N/A</td>`;
+    if (prev === 0) return `<td class="err-cell">#DIV/0!</td>`;
+    const pct = (curr / prev - 1) * 100;
+    const cls = pct <= 0 ? 'desv-pos' : 'desv-neg';
+    return `<td class="${cls}">${pct.toFixed(1)}%</td>`;
+}
+
+function renderSummaryTable(months) {
+    const endMonth = months[months.length - 1];
+    if (!endMonth) return;
+
+    const trimCurr = getTrimMonths(endMonth,  0);
+    const trimPrev = getTrimMonths(endMonth, -1);
+
+    // Group processed rows by subcuenta
+    const groups = {};
+    state.processed.forEach(row => {
+        const sc = row.subcuenta || 'Sin subcuenta';
+        if (!groups[sc]) groups[sc] = [];
+        groups[sc].push(row);
+    });
+
+    // Sum units per subcuenta from unidades sheet
+    function unitSum(sc, trimMonths) {
+        const items = state.unidades.filter(r => r.subcuenta === sc);
+        if (!items.length) return null;
+        return items.reduce((s, r) => s + trimMonths.reduce((ss, m) => ss + (r.monthlyUnits[m] || 0), 0), 0);
+    }
+
+    // Average unit cost per subcuenta for a trimester (avg of non-zero monthly values)
+    function ucAvg(sc, trimMonths) {
+        const items = state.unitCost.filter(r => r.subcuenta === sc);
+        if (!items.length) return null;
+        let sum = 0, count = 0;
+        items.forEach(r => trimMonths.forEach(m => {
+            const v = r.monthlyUnitCost[m] || 0;
+            if (v > 0) { sum += v; count++; }
+        }));
+        return count > 0 ? sum / count : null;
+    }
+
+    const rows = Object.entries(groups).map(([sc, items]) => {
+        const gastoCurr = items.reduce((s, r) => s + sumMonths(r, 'monthlyReal', trimCurr), 0);
+        const gastoPrev = items.reduce((s, r) => s + sumMonths(r, 'monthlyReal', trimPrev), 0);
+        const unidCurr  = unitSum(sc, trimCurr);
+        const unidPrev  = unitSum(sc, trimPrev);
+        // Costo Unitario = Gasto Total / Unidades (en lugar de promedio de costos unitarios)
+        const ucCurr    = (unidCurr !== null && unidCurr > 0) ? gastoCurr / unidCurr : null;
+        const ucPrev    = (unidPrev !== null && unidPrev > 0) ? gastoPrev / unidPrev : null;
+        return { sc, gastoCurr, gastoPrev, unidCurr, unidPrev, ucCurr, ucPrev };
+    });
+
+    const fmtUnid = v => v === null ? '-' : fmt(v);
+    const fmtUC   = v => v === null ? '-' : '$' + fmtDec(v);
+
+    document.getElementById('summaryBody').innerHTML = rows.map(({ sc, gastoCurr, gastoPrev, unidCurr, unidPrev, ucCurr, ucPrev }) => {
+        const unidDesvCell = (c, p) => c === null || p === null ? `<td class="err-cell">N/A</td>` : desvCell(c, p);
+        return `<tr>
+            <td>${sc}</td>
+            <td>$${fmt(gastoCurr)}</td><td>$${fmt(gastoPrev)}</td>${desvCell(gastoCurr, gastoPrev)}
+            <td>${fmtUnid(unidCurr)}</td><td>${fmtUnid(unidPrev)}</td>${unidDesvCell(unidCurr, unidPrev)}
+            <td>${fmtUC(ucCurr)}</td><td>${fmtUC(ucPrev)}</td>${ucCurr !== null && ucPrev !== null ? desvCell(ucCurr, ucPrev) : '<td class="err-cell">N/A</td>'}
+        </tr>`;
+    }).join('');
+
+    // Totals row (gasto and unidades only; UC total not meaningful as avg-of-avgs)
+    const tGastoCurr = rows.reduce((s, r) => s + r.gastoCurr, 0);
+    const tGastoPrev = rows.reduce((s, r) => s + r.gastoPrev, 0);
+    const tUnidCurr  = rows.every(r => r.unidCurr !== null) ? rows.reduce((s, r) => s + (r.unidCurr || 0), 0) : null;
+    const tUnidPrev  = rows.every(r => r.unidPrev !== null) ? rows.reduce((s, r) => s + (r.unidPrev || 0), 0) : null;
+
+    document.getElementById('summaryFoot').innerHTML = `<tr class="row-total">
+        <td>Total</td>
+        <td>$${fmt(tGastoCurr)}</td><td>$${fmt(tGastoPrev)}</td>${desvCell(tGastoCurr, tGastoPrev)}
+        <td>${tUnidCurr !== null ? fmt(tUnidCurr) : '-'}</td><td>${tUnidPrev !== null ? fmt(tUnidPrev) : '-'}</td>
+        ${tUnidCurr !== null && tUnidPrev !== null ? desvCell(tUnidCurr, tUnidPrev) : '<td class="err-cell">N/A</td>'}
+        <td colspan="3">—</td>
+    </tr>`;
+}
+
+function exportToCSV() {
+    const months = getFilteredMonths();
+    const endMonth = months[months.length - 1];
+    const trimCurr = getTrimMonths(endMonth,  0);
+    const trimPrev = getTrimMonths(endMonth, -1);
+
+    const rows = state.processed.map(row => {
+        const gastoCurr = sumMonths(row, 'monthlyReal', trimCurr);
+        const gastoPrev = sumMonths(row, 'monthlyReal', trimPrev);
+        const unidRow   = state.unidades.find(r => r.subcuenta === row.subcuenta && r.clase === row.clase && r.item === row.item);
+        const unidCurr  = unidRow ? trimCurr.reduce((s, m) => s + (unidRow.monthlyUnits[m] || 0), 0) : '';
+        const unidPrev  = unidRow ? trimPrev.reduce((s, m) => s + (unidRow.monthlyUnits[m] || 0), 0) : '';
+        return `"${row.subcuenta}","${row.clase}","${row.item}","${row.nombre}",${gastoCurr},${gastoPrev},${unidCurr},${unidPrev}`;
+    });
+    const csv  = 'Subcuenta,Clase,Item,Nombre,Gasto Trim Actual,Gasto Trim AA,Unidades Trim Actual,Unidades Trim AA\n' + rows.join('\n');
+    const link = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })),
+        download: 'reporte_suministros.csv'
+    });
+    link.click();
+}
+</script>
+</body>
+</html>
